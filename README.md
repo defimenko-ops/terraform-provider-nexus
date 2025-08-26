@@ -1,10 +1,16 @@
-# Terraform provider Nexus
+# Terraform provider Nexus (Fork with Write-Only Password Support)
 
-![codeql workflow](https://github.com/datadrivers/terraform-provider-nexus/actions/workflows/codeql-analysis.yml/badge.svg)
+![codeql workflow](https://github.com/yourusername/terraform-provider-nexus/actions/workflows/codeql-analysis.yml/badge.svg)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/datadrivers/terraform-provider-nexus)](https://goreportcard.com/report/github.com/datadrivers/terraform-provider-nexus)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/terraform-provider-nexus)](https://goreportcard.com/report/github.com/yourusername/terraform-provider-nexus)
 
-- [Terraform provider Nexus](#terraform-provider-nexus)
+> **Note**: This is a fork of [datadrivers/terraform-provider-nexus v2.6.0](https://github.com/datadrivers/terraform-provider-nexus) with added support for write-only passwords. See [Pull Request #538](https://github.com/datadrivers/terraform-provider-nexus/pull/538) for upstream integration status.
+
+- [Terraform provider Nexus (Fork)](#terraform-provider-nexus-fork-with-write-only-password-support)
+  - [Fork Changes](#fork-changes)
+  - [Installation](#installation)
+  - [Write-Only Password Feature](#write-only-password-feature)
+  - [Migration from Original Provider](#migration-from-original-provider)
   - [Introduction](#introduction)
   - [Usage](#usage)
     - [Provider config](#provider-config)
@@ -14,6 +20,118 @@
       - [To debug tests](#to-debug-tests)
     - [Create documentation](#create-documentation)
   - [Author](#author)
+
+## Fork Changes
+
+This fork adds secure password management capabilities to prevent passwords from being stored in Terraform state files.
+
+### New in this Fork (v2.6.0-writeonly.x):
+- **Write-only password support** for `nexus_security_user` resource
+- **Ephemeral resource compatibility** (works with `random_password`, external secrets)
+- **Automatic password rotation** support
+- **Full backward compatibility** with existing configurations
+
+
+## Installation
+
+Add this provider to your Terraform configuration:
+
+```hcl
+terraform {
+  required_providers {
+    nexus = {
+      source  = "defimenko-ops/nexus"  # Your published provider
+      version = "~> 1.0.0"
+    }
+  }
+}
+```
+
+## Write-Only Password Feature
+
+### Secure Password Management
+
+```hcl
+resource "nexus_security_user" "secure_user" {
+  userid              = "secure-user"
+  firstname           = "Secure"
+  lastname            = "User"
+  email               = "secure@example.com"
+  password_wo         = "secret-password"    # NOT stored in state
+  password_wo_version = 1                    # Only version tracked
+  status              = "active"
+  roles               = ["nx-admin"]
+}
+```
+
+### With Random Passwords
+
+```hcl
+ephemeral "random_password" "password" {
+  length           = 16
+}
+
+resource "nexus_security_user" "random_user" {
+  userid              = "random-user"
+  firstname           = "Random"
+  lastname            = "User"
+  email               = "random@example.com"
+  password_wo         = ephemeral.random_password.password.result  # Ephemeral
+  password_wo_version = 1
+  status              = "active"
+  roles               = ["nx-developer"]
+}
+```
+
+### Password Updates
+
+```hcl
+# To update password, increment the version:
+resource "nexus_security_user" "secure_user" {
+  userid              = "secure-user"
+  password_wo         = "new-secret-password"
+  password_wo_version = 2                    # Triggers password update
+  # ... other fields unchanged
+}
+```
+
+### External Secret Management
+
+```hcl
+data "aws_secretsmanager_secret_version" "nexus_password" {
+  secret_id = "prod/nexus/admin-password"
+}
+
+resource "nexus_security_user" "admin" {
+  userid              = "admin-secure"
+  password_wo         = jsondecode(data.aws_secretsmanager_secret_version.nexus_password.secret_string)["password"]
+  password_wo_version = jsondecode(data.aws_secretsmanager_secret_version.nexus_password.secret_string)["version"]
+  # ... other fields
+}
+```
+
+## Migration from Original Provider
+
+### Option 1: Keep existing configuration
+```hcl
+# This continues to work (backward compatible)
+resource "nexus_security_user" "legacy" {
+  userid   = "legacy-user"
+  password = "still-works"  # Still stored in state
+  # ... other fields
+}
+```
+
+### Option 2: Migrate to secure approach
+```hcl
+# Change to write-only password
+resource "nexus_security_user" "migrated" {
+  userid              = "legacy-user"        # Same user ID
+  password_wo         = "secure-password"    # New secure field
+  password_wo_version = 1                    # Add version tracking
+  # ... other fields unchanged
+}
+```
 
 ## Introduction
 
